@@ -1,0 +1,31 @@
+# Research questions for the evaluation. dev = used while building (prompts were adjusted on these); test = held out.
+- {id: q01, split: dev, question: "How do vision transformers compare with CNNs on class-imbalanced image classification?"}
+- {id: q02, split: dev, question: "Which loss functions are used to handle class imbalance in deep learning, and how do they compare?"}
+- {id: q03, split: dev, question: "How is retrieval-augmented generation evaluated, and which metrics are used for faithfulness?"}
+- {id: q04, split: dev, question: "What methods improve large language models on text-to-SQL benchmarks such as Spider and BIRD?"}
+- {id: q05, split: dev, question: "How effective is self-correction or self-refinement in large language models?"}
+- {id: q06, split: dev, question: "What techniques defend LLM applications against prompt injection attacks?"}
+- {id: q07, split: dev, question: "How are uplift models evaluated in marketing and causal inference applications?"}
+- {id: q08, split: dev, question: "What approaches exist for low-resource Urdu natural language processing?"}
+- {id: q09, split: dev, question: "How does CUPED or regression adjustment reduce variance in online controlled experiments?"}
+- {id: q10, split: dev, question: "What are the main challenges in facial emotion recognition on in-the-wild datasets such as FER2013?"}
+- {id: q11, split: test, question: "How do hybrid retrievers combining BM25 and dense embeddings compare with either retriever alone?"}
+- {id: q12, split: test, question: "What evidence is there that cross-encoder rerankers improve retrieval quality?"}
+- {id: q13, split: test, question: "How are tool-using LLM agents evaluated, and what benchmarks exist?"}
+- {id: q14, split: test, question: "What causes hallucination in large language models and which mitigation methods work?"}
+- {id: q15, split: test, question: "How does parameter-efficient fine-tuning such as LoRA compare with full fine-tuning?"}
+- {id: q16, split: test, question: "What methods keep characters visually consistent across images in text-to-image story generation?"}
+- {id: q17, split: test, question: "How well do large language models perform on financial question answering over company filings?"}
+- {id: q18, split: test, question: "What are the risks of peeking and early stopping in A/B tests, and how do sequential tests address them?"}
+- {id: q19, split: test, question: "How do gradient boosting models compare with deep learning on tabular data?"}
+- {id: q20, split: test, question: "Which techniques detect and handle concept drift in deployed machine learning models?"}
+- {id: q21, split: test, question: "How effective is SMOTE oversampling compared with other methods for imbalanced tabular classification?"}
+- {id: q22, split: test, question: "How are LLM-as-a-judge evaluations validated against human judgments, and what biases do they have?"}
+- {id: q23, split: test, question: "What approaches are used for automatic speech recognition in low-resource languages?"}
+- {id: q24, split: test, question: "How does chunking strategy affect retrieval-augmented generation performance?"}
+- {id: q25, split: test, question: "What are the main approaches to multi-agent collaboration between large language models?"}
+- {id: q26, split: test, question: "How is explainability provided for credit card fraud detection models?"}
+- {id: q27, split: test, question: "What is known about the robustness of vision transformers to distribution shift compared with CNNs?"}
+- {id: q28, split: test, question: "How are time series forecasting foundation models evaluated against statistical baselines?"}
+- {id: q29, split: test, question: "What methods are used to generate comics or visual narratives from text with diffusion models?"}
+- {id: q30, split: test, question: "How do human-in-the-loop approval steps affect the safety of autonomous AI agents?"}
