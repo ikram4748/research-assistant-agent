@@ -57,7 +57,7 @@ def main() -> None:
         for split in ("test", "dev"):
             p = ROOT / "results" / f"RESULTS_{split}.md"
             if p.exists():
-                st.markdown(p.read_text())
+                st.markdown(p.read_text(encoding="utf-8"))
     with tab_run:
         q = st.selectbox("Example questions", ["(write your own)"] + EXAMPLES)
         question = st.text_input("Research question", value="" if q.startswith("(") else q)

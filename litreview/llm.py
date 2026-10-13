@@ -44,13 +44,22 @@ class LLMResult:
 def parse_json(text: str) -> dict:
     """Parse a JSON object from a model reply, tolerating ``` fences and leading prose."""
     t = re.sub(r"^\s*```(?:json)?|```\s*$", "", text.strip()).strip()
-    try:
-        return json.loads(t)
-    except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", t, re.S)
-        if m:
-            return json.loads(m.group(0))
-        raise
+    for cand in (t, _fix_escapes(t)):   # quotes copied from abstracts can carry LaTeX backslashes (e.g. "\\(")
+        try:
+            return json.loads(cand)
+        except json.JSONDecodeError:
+            m = re.search(r"\{.*\}", cand, re.S)
+            if m:
+                try:
+                    return json.loads(m.group(0))
+                except json.JSONDecodeError:
+                    pass
+    raise ValueError("no JSON object in model reply")
+
+
+def _fix_escapes(text: str) -> str:
+    """Double every backslash that does not start a valid JSON escape; valid escapes (including \\\\) are kept."""
+    return re.sub(r'\\(["\\/bfnrtu])|\\', lambda m: m.group(0) if m.group(1) else "\\\\", text)
 
 
 class _RateLimiter:

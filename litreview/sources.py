@@ -1,4 +1,7 @@
-"""Paper search: arXiv and OpenAlex. Both are free and need no API key.
+"""Paper search: arXiv and OpenAlex. Both are free; neither needs an API key.
+
+OpenAlex gives requests without a key a small daily budget that is shared by everyone behind the same IP address
+(about 100 searches a day in October 2026). A free OpenAlex key (OPENALEX_API_KEY in .env) gives its own budget.
 
 Semantic Scholar was the first choice, but its unauthenticated API answered every request with 429 (rate limited)
 during development, so OpenAlex is used instead: it indexes journals, conferences and arXiv, and returns abstracts
@@ -11,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 import sqlite3
 import threading
@@ -56,7 +60,8 @@ class _HttpCache:
         self.lock = threading.Lock()
         self.last: dict[str, float] = {}
 
-    def get(self, url: str, min_interval: float, host: str) -> str:
+    def get(self, url: str, min_interval: float, host: str, fetch_url: str | None = None) -> str:
+        """`url` is the cache key; `fetch_url` (default `url`) is what is requested, e.g. with an API key added."""
         with self.lock:
             row = self.db.execute("select body from http where url = ?", (url,)).fetchone()
         if row:
@@ -68,7 +73,7 @@ class _HttpCache:
             if wait > 0:
                 time.sleep(wait)
             try:
-                req = urllib.request.Request(url, headers={"User-Agent": UA})
+                req = urllib.request.Request(fetch_url or url, headers={"User-Agent": UA})
                 with urllib.request.urlopen(req, timeout=30) as r:
                     body = r.read().decode("utf-8")
                 with self.lock:
@@ -127,7 +132,9 @@ def search_openalex(query: str, n: int = 8) -> list[Paper]:
     url = "https://api.openalex.org/works?" + urllib.parse.urlencode(
         {"search": clean_query(query), "per-page": n, "filter": "has_abstract:true",
          "select": "id,display_name,abstract_inverted_index,publication_year,authorships,primary_location,cited_by_count,doi"})
-    data = json.loads(_http().get(url, 0.2, "openalex"))
+    key = os.getenv("OPENALEX_API_KEY", "").strip()      # kept out of the cache key, so cached replies still match
+    fetch = f"{url}&{urllib.parse.urlencode({'api_key': key})}" if key else None
+    data = json.loads(_http().get(url, 0.2, "openalex", fetch))
     out = []
     for w in data.get("results", []):
         loc = (w.get("primary_location") or {})

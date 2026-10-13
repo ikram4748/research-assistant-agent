@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import difflib
 import json
 import random
+import re
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -38,12 +40,12 @@ SYSTEMS = ["baseline", "multi_agent"]
 
 
 def questions(split: str) -> list[dict]:
-    rows = yaml.safe_load((ROOT / "evaluation" / "questions.yaml").read_text())
+    rows = yaml.safe_load((ROOT / "evaluation" / "questions.yaml").read_text(encoding="utf-8"))
     return [r for r in rows if split == "all" or r["split"] == split]
 
 
 def _jsonl(p: Path) -> dict:
-    return {r["id"]: r for r in map(json.loads, p.read_text().splitlines())} if p.exists() else {}
+    return {r["id"]: r for r in map(json.loads, p.read_text(encoding="utf-8").splitlines())} if p.exists() else {}
 
 
 def judge(llm: Gemini, review: dict, cites_override: list[list[str]] | None = None) -> list[dict]:
@@ -63,9 +65,36 @@ def judge(llm: Gemini, review: dict, cites_override: list[list[str]] | None = No
     for i, s in enumerate(sents):
         cites = cites_override[i] if cites_override else s["cites"]
         v = out.get(i + 1, {})
-        res.append({"supported": bool(v.get("supported")), "supporting": [c for c in v.get("supporting", []) if c in cites],
-                    "cites": cites, "judged": bool(v)})
+        named = v.get("supporting")
+        supporting = [c for c in named if c in cites] if isinstance(named, list) else []   # sometimes a bare true/false
+        evidence = str(v.get("evidence", ""))
+        # All sentences are judged in one prompt, so the judge sometimes credits a sentence with another sentence's
+        # paper. Count a sentence as supported only if a paper it actually cites is named as support and the quoted
+        # evidence really is in one of those abstracts.
+        quoted = _evidence_found(evidence, [review["papers"][lab[c]]["abstract"] for c in supporting])
+        res.append({"supported": bool(v.get("supported")) and bool(supporting) and quoted, "supporting": supporting,
+                    "cites": cites, "judged": bool(v), "judge_said": bool(v.get("supported")), "evidence": evidence})
     return res
+
+
+def _norm(text: str) -> str:
+    text = re.sub(r"\\u[0-9a-fA-F]{4}", " ", text)
+    return " ".join("".join(ch.lower() if ch.isalnum() else " " for ch in text).split())
+
+
+def _evidence_found(evidence: str, abstracts: list[str]) -> bool:
+    """At least one fragment of the judge's quote (4+ words; fragments split at "...", new lines and "(P3)" labels)
+    must be in one of the supporting abstracts, at least 80% of it verbatim. Quotes taken only from papers the
+    sentence does not cite fail this."""
+    pieces = [_norm(p) for p in re.split(r"\.\.\.|…|\n|\(P\d+\)", evidence)]
+    pieces = [p for p in pieces if len(p.split()) >= 4]
+    texts = [_norm(a) for a in abstracts]
+    for p in pieces:
+        for t in texts:
+            m = difflib.SequenceMatcher(None, p, t, autojunk=False).find_longest_match(0, len(p), 0, len(t))
+            if m.size >= 0.8 * len(p):
+                return True
+    return False
 
 
 def produce(split: str, system: str, llm: Gemini, workers: int) -> None:
@@ -81,7 +110,7 @@ def produce(split: str, system: str, llm: Gemini, workers: int) -> None:
                "papers": {pid: s["papers"][pid] for pid in s["selected"]}, "sentences": s["sentences"],
                "llm_calls": s["llm_calls"], "seconds": s["seconds"], "dropped": s.get("dropped", {}),
                "events": s["events"], "markdown": pipeline.render(s)}
-        with lock, path.open("a") as f:
+        with lock, path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
         print(f"  {system} {q['id']}: {len(s['sentences'])} sentences, {s['llm_calls']} calls, {s['seconds']}s")
 
@@ -113,7 +142,7 @@ def run_judge(split: str, judge_llm: Gemini) -> None:
             except LLMUnavailable as e:
                 print("stopping:", e)
                 return
-            with path.open("a") as f:
+            with path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps({"id": qid, "system": system, "real": real, "swapped": fake}) + "\n")
             print(f"  judged {system} {qid}")
 
@@ -138,7 +167,9 @@ def report(split: str) -> str:
             sup += sum(x["supported"] for x in js)
             pairs += sum(len(x["cites"]) for x in js)
             good_pairs += sum(len(x["supporting"]) for x in js)
-            per_q.setdefault(qid, {})[system] = sum(x["supported"] for x in js) / len(js) if js else None
+            q_pairs = sum(len(x["cites"]) for x in js)
+            per_q.setdefault(qid, {})[system] = (sum(x["supported"] for x in js) / len(js) if js else None,
+                                                 sum(len(x["supporting"]) for x in js) / q_pairs if q_pairs else None)
             fk = [x for x in j["swapped"] if x["judged"]]
             check["swapped_total"] += len(fk)
             check["swapped_flagged"] += sum(not x["supported"] for x in fk)
@@ -148,12 +179,15 @@ def report(split: str) -> str:
                      f"**{sup / n_s:.0%}** | {good_pairs / pairs:.0%} | {distinct:.1f} | "
                      f"{sum(x['llm_calls'] for x in r) / len(r):.1f} | {sum(x['seconds'] for x in r) / len(r):.0f} |"
                      if n_s else f"| `{system}` | {len(r)} | - | (not judged yet) | | | | |")
-    both = [(v["baseline"], v["multi_agent"]) for v in per_q.values() if v.get("baseline") is not None and v.get("multi_agent") is not None]
-    if both:
+    for k, name in ((0, "Sentence support"), (1, "Citation precision")):
+        both = [(v["baseline"][k], v["multi_agent"][k]) for v in per_q.values()
+                if "baseline" in v and "multi_agent" in v and v["baseline"][k] is not None and v["multi_agent"][k] is not None]
+        if not both:
+            continue
         diffs = [b - a for a, b in both]
         rng = random.Random(0)
         boots = sorted(sum(rng.choice(diffs) for _ in diffs) / len(diffs) for _ in range(10_000))
-        lines += ["", f"**Sentence support, multi-agent − baseline:** {sum(diffs) / len(diffs):+.0%} per review, "
+        lines += ["", f"**{name}, multi-agent − baseline:** {sum(diffs) / len(diffs):+.0%} per review, "
                   f"95% CI [{boots[250]:+.0%}, {boots[9750]:+.0%}] (paired bootstrap over {len(diffs)} questions)."]
     if check["swapped_total"]:
         lines += ["", f"**Judge check:** with every citation swapped to a random other retrieved paper, the judge marked "
@@ -166,7 +200,7 @@ def report(split: str) -> str:
         lines += ["", f"Inside the multi-agent pipeline: {drops} findings were dropped because their quote was not in the abstract, "
                   f"and the critic flagged {flagged} sentences in its first round (revised or removed before the final review)."]
     text = "\n".join(lines) + "\n"
-    (RESULTS / f"RESULTS_{split}.md").write_text(text)
+    (RESULTS / f"RESULTS_{split}.md").write_text(text, encoding="utf-8")
     return text
 
 
@@ -184,6 +218,7 @@ def main() -> None:
         for system in args.systems:
             produce(args.split, system, llm, args.workers)
         run_judge(args.split, judge_llm)
+    sys.stdout.reconfigure(encoding="utf-8")
     print(report(args.split))
 
 

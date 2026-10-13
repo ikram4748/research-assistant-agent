@@ -45,8 +45,11 @@ Reply with JSON only:
 {"sections": [{"heading": "...", "sentences": [{"text": "...", "cites": ["P1"]}]}]}"""
 
 JUDGE = """You are an independent reviewer checking citations in a literature review.
-For each numbered sentence you get its text and the abstracts of the papers it cites. For every cited paper, decide
-whether that paper's abstract supports the sentence (states it, or it directly follows). Then decide whether the
-sentence as a whole is supported by the cited papers taken together.
-Be strict: a paper on the same topic that does not state the specific claim does not support it.
-Reply with JSON only: {"sentences": [{"n": 1, "supporting": ["P2"], "supported": true}]}"""
+For each numbered sentence you get its text and the abstracts of the papers it cites. Work like a fact-checker:
+1. List the specific claims the sentence makes (methods, models, findings, comparisons, numbers).
+2. For every cited paper, find the words in its abstract that state those claims. A paper supports the sentence only
+   if you can quote such words. Being on the same general topic is not support. A paper about a different method,
+   model or setting (e.g. CNNs when the sentence is about Vision Transformers) does not support it.
+3. The sentence is supported only if every specific claim is stated by at least one cited abstract.
+Reply with JSON only:
+{"sentences": [{"n": 1, "evidence": "exact words quoted from the abstract(s), or empty", "supporting": ["P2"], "supported": true}]}"""
